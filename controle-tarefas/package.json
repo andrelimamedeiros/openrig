@@ -1,0 +1,14 @@
+{
+  "name": "controle-tarefas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Controle de tarefas, responsáveis, horas, projetos e clientes para a equipe — roda no servidor do escritório.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
