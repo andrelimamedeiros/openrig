@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controle de Tarefas</title>
+  <link rel="icon" href="icone.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">
+      <img src="icone.svg" alt="" width="26" height="26">
+      <span>Controle de Tarefas</span>
+    </div>
+    <nav class="abas" id="abas">
+      <button data-aba="tarefas" class="ativa">Tarefas</button>
+      <button data-aba="projetos">Projetos</button>
+      <button data-aba="clientes">Clientes</button>
+      <button data-aba="equipe">Equipe</button>
+      <button data-aba="horas">Horas</button>
+    </nav>
+    <div class="topo-direita">
+      <div id="meu-timer" class="meu-timer" hidden></div>
+      <label class="eu-sou">
+        <span>Eu sou</span>
+        <select id="eu-sou"></select>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <section id="aba-tarefas" class="aba">
+      <form id="rapida" class="rapida" autocomplete="off">
+        <input id="rapida-titulo" placeholder="O que precisa ser feito? (Enter para adicionar)" required>
+        <select id="rapida-projeto" title="Projeto"></select>
+        <select id="rapida-responsavel" title="Responsável"></select>
+        <input id="rapida-prazo" type="date" title="Prazo">
+        <button class="primario" type="submit">+ Adicionar</button>
+      </form>
+
+      <div class="filtros">
+        <input id="f-busca" type="search" placeholder="Buscar tarefa, projeto ou cliente…">
+        <select id="f-projeto"></select>
+        <select id="f-responsavel"></select>
+        <label class="chk"><input id="f-concluidas" type="checkbox"> Mostrar concluídas</label>
+      </div>
+
+      <div class="quadro" id="quadro">
+        <div class="coluna" data-status="a_fazer">
+          <h2>A fazer <span class="qtd"></span></h2>
+          <div class="cartoes"></div>
+        </div>
+        <div class="coluna" data-status="em_andamento">
+          <h2>Em andamento <span class="qtd"></span></h2>
+          <div class="cartoes"></div>
+        </div>
+        <div class="coluna" data-status="concluida">
+          <h2>Concluídas <span class="qtd"></span></h2>
+          <div class="cartoes"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="aba-projetos" class="aba" hidden>
+      <div class="cabecalho-aba">
+        <h1>Projetos</h1>
+        <input id="busca-projetos" type="search" placeholder="Buscar…">
+        <button class="primario" data-novo="projetos">+ Novo projeto</button>
+      </div>
+      <div id="lista-projetos" class="grade"></div>
+    </section>
+
+    <section id="aba-clientes" class="aba" hidden>
+      <div class="cabecalho-aba">
+        <h1>Clientes</h1>
+        <input id="busca-clientes" type="search" placeholder="Buscar…">
+        <button class="primario" data-novo="clientes">+ Novo cliente</button>
+      </div>
+      <div id="lista-clientes" class="grade"></div>
+    </section>
+
+    <section id="aba-equipe" class="aba" hidden>
+      <div class="cabecalho-aba">
+        <h1>Equipe</h1>
+        <button class="primario" data-novo="pessoas">+ Nova pessoa</button>
+      </div>
+      <div id="lista-equipe" class="grade"></div>
+    </section>
+
+    <section id="aba-horas" class="aba" hidden>
+      <div class="cabecalho-aba">
+        <h1>Horas</h1>
+        <div class="periodo" id="periodo">
+          <button data-periodo="hoje">Hoje</button>
+          <button data-periodo="semana" class="ativa">Semana</button>
+          <button data-periodo="mes">Mês</button>
+          <input id="h-de" type="date" title="De">
+          <input id="h-ate" type="date" title="Até">
+        </div>
+        <select id="h-pessoa"></select>
+        <button data-novo="apontamentos">+ Lançar horas</button>
+        <a id="exportar" class="botao" href="#">Exportar Excel (CSV)</a>
+      </div>
+      <div id="resumo-horas" class="resumo"></div>
+      <div id="tabela-horas"></div>
+    </section>
+  </main>
+
+  <div id="avisos" class="avisos" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
