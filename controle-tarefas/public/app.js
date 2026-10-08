@@ -267,16 +267,40 @@ function filtrarTarefas() {
   });
 }
 
+// Tarefas adicionadas nesta tela ficam no topo da coluna até a página ser recarregada,
+// para quem acabou de lançar enxergar a tarefa sem procurar.
+const recentes = new Set();
+
 function ordenar(tarefas, status) {
   const peso = { alta: 0, normal: 1, baixa: 2 };
   return tarefas.sort((a, b) => {
     if (status === "concluida") return (b.atualizadoEm ?? b.criadoEm).localeCompare(a.atualizadoEm ?? a.criadoEm);
     return (
+      recentes.has(b.id) - recentes.has(a.id) ||
       (peso[a.prioridade] ?? 1) - (peso[b.prioridade] ?? 1) ||
       (a.prazo || "9999").localeCompare(b.prazo || "9999") ||
-      a.criadoEm.localeCompare(b.criadoEm)
+      b.criadoEm.localeCompare(a.criadoEm)
     );
   });
+}
+
+// Garante que a tarefa nova apareça: limpa filtros que a escondem, rola até ela e destaca.
+function mostrarTarefaNova(id) {
+  recentes.add(id);
+  if (!filtrarTarefas().some((t) => t.id === id)) {
+    $("#f-busca").value = "";
+    $("#f-projeto").value = "";
+    $("#f-responsavel").value = "";
+    aviso("Filtros limpos para mostrar a tarefa nova");
+  }
+  mostrarAba("tarefas");
+  renderTarefas();
+  const el = document.querySelector(`.cartao[data-id="${CSS.escape(id)}"]`);
+  if (!el) return;
+  const suave = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ block: "center", behavior: suave ? "smooth" : "auto" });
+  el.classList.add("destaque");
+  setTimeout(() => el.classList.remove("destaque"), 2600);
 }
 
 function cartao(t) {
@@ -313,6 +337,7 @@ function cartao(t) {
           : `${euRodando ? `<button class="play parar" data-parar="${esc(t.id)}">■ Parar</button>` : `<button class="play" data-iniciar="${esc(t.id)}">▶ Iniciar</button>`}
              <button class="icone" data-status="${esc(t.id)}:concluida" title="Concluir">✓</button>`
       }
+      <button class="icone" data-excluir-em="tarefas:${esc(t.id)}" title="Excluir tarefa" aria-label="Excluir tarefa">🗑</button>
     </div>
   </div>`;
 }
@@ -385,6 +410,7 @@ function renderProjetos() {
               <button data-ver-projeto="${esc(p.id)}">Ver tarefas</button>
               <button data-nova-tarefa="${esc(p.id)}">+ Tarefa</button>
               <button data-editar-em="projetos:${esc(p.id)}">Editar</button>
+              <button class="perigo" data-excluir-em="projetos:${esc(p.id)}">Excluir</button>
             </div>
           </div>`;
         })
@@ -417,6 +443,7 @@ function renderClientes() {
             <div class="acoes">
               <button data-novo-projeto-cliente="${esc(c.id)}">+ Projeto</button>
               <button data-editar-em="clientes:${esc(c.id)}">Editar</button>
+              <button class="perigo" data-excluir-em="clientes:${esc(c.id)}">Excluir</button>
             </div>
           </div>`;
         })
@@ -460,6 +487,7 @@ function renderEquipe() {
             <div class="acoes">
               <button data-ver-pessoa="${esc(p.id)}">Ver tarefas</button>
               <button data-editar-em="pessoas:${esc(p.id)}">Editar</button>
+              <button class="perigo" data-excluir-em="pessoas:${esc(p.id)}">Excluir</button>
             </div>
           </div>`;
         })
@@ -758,10 +786,7 @@ function abrirFormulario(colecao, item = null, preset = {}) {
     });
 
     $("[data-excluir]", fundo)?.addEventListener("click", async () => {
-      const extra = colecao === "tarefas" && apontamentosDaTarefa(item.id).length ? " As horas registradas nela também serão apagadas." : "";
-      if (!confirm(`Excluir este registro?${extra}`)) return;
-      const ok = await acao(() => api("DELETE", `/api/${colecao}/${item.id}`).then(() => true), "Excluído");
-      if (ok) fechar(null);
+      if (await excluirItem(colecao, item)) fechar(null);
     });
 
     $("[data-lancar]", fundo)?.addEventListener("click", async () => {
@@ -807,11 +832,94 @@ function abrirFormulario(colecao, item = null, preset = {}) {
         () => (item ? api("PUT", `/api/${colecao}/${item.id}`, corpo) : api("POST", `/api/${colecao}`, corpo)),
         item ? "Salvo" : "Cadastrado",
       );
-      if (salvo) fechar(salvo);
+      if (salvo) {
+        fechar(salvo);
+        if (colecao === "tarefas" && !item) mostrarTarefaNova(salvo.id);
+      }
     });
 
     setTimeout(() => form.querySelector("input, select, textarea")?.focus(), 0);
   });
+}
+
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+
+// Descreve o que será apagado junto, espelhando a exclusão em cascata do servidor.
+function resumoExclusao(colecao, item) {
+  const horasDe = (tarefas) => E.apontamentos.filter((a) => tarefas.includes(a.tarefaId)).reduce((s, a) => s + duracao(a), 0);
+  const itens = [];
+  let tarefas = [];
+  if (colecao === "clientes") {
+    const projetos = E.projetos.filter((p) => p.clienteId === item.id).map((p) => p.id);
+    tarefas = E.tarefas.filter((t) => projetos.includes(t.projetoId)).map((t) => t.id);
+    if (projetos.length) itens.push(plural(projetos.length, "projeto", "projetos"));
+  }
+  if (colecao === "projetos") tarefas = E.tarefas.filter((t) => t.projetoId === item.id).map((t) => t.id);
+  if (colecao === "tarefas") tarefas = [item.id];
+  if (colecao !== "tarefas" && tarefas.length) itens.push(plural(tarefas.length, "tarefa", "tarefas"));
+  const horas = horasDe(tarefas);
+  if (horas) itens.push(`${fmtHoras(horas)} de horas registradas`);
+
+  const nomes = {
+    clientes: ["o cliente", item.nome],
+    projetos: ["o projeto", nomeProjeto(item)],
+    pessoas: ["a pessoa", item.nome],
+    tarefas: ["a tarefa", item.titulo],
+    apontamentos: ["este registro de horas", ""],
+  };
+  const [artigo, nome] = nomes[colecao];
+  const titulo = `Excluir ${artigo}${nome ? ` “${nome}”` : ""}?`;
+
+  if (colecao === "pessoas") {
+    const horasPessoa = E.apontamentos.filter((a) => a.pessoaId === item.id).length;
+    if (horasPessoa) {
+      return { titulo, bloqueio: `${item.nome} tem ${plural(horasPessoa, "registro de horas", "registros de horas")}. Para manter o histórico, edite o cadastro em vez de excluir.` };
+    }
+    const resp = E.tarefas.filter((t) => t.responsavelId === item.id).length;
+    return { titulo, texto: resp ? `${plural(resp, "tarefa ficará", "tarefas ficarão")} sem responsável.` : "" };
+  }
+  return { titulo, itens, texto: itens.length ? "Também serão apagados:" : "" };
+}
+
+function confirmarExclusao(colecao, item) {
+  return new Promise((resolver) => {
+    const r = resumoExclusao(colecao, item);
+    const fundo = document.createElement("div");
+    fundo.className = "fundo-modal";
+    fundo.innerHTML = `<div class="modal modal-confirmar" role="alertdialog" aria-modal="true">
+      <h2>${esc(r.titulo)}</h2>
+      ${r.bloqueio ? `<p>${esc(r.bloqueio)}</p>` : ""}
+      ${r.texto ? `<p>${esc(r.texto)}</p>` : ""}
+      ${r.itens?.length ? `<ul class="lista-exclusao">${r.itens.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}
+      ${r.bloqueio ? "" : `<p class="sub">Não dá para desfazer pelo aplicativo. O servidor guarda uma cópia de segurança por dia.</p>`}
+      <div class="botoes-modal">
+        <button type="button" data-nao>${r.bloqueio ? "Entendi" : "Cancelar"}</button>
+        ${r.bloqueio ? "" : `<button type="button" class="botao-perigo" data-sim>Excluir</button>`}
+      </div>
+    </div>`;
+    document.body.append(fundo);
+    const fechar = (sim) => {
+      fundo.remove();
+      document.removeEventListener("keydown", aoTeclar, true);
+      resolver(sim);
+    };
+    const aoTeclar = (ev) => {
+      if (ev.key !== "Escape") return;
+      ev.stopPropagation();
+      fechar(false);
+    };
+    document.addEventListener("keydown", aoTeclar, true);
+    $("[data-nao]", fundo).onclick = () => fechar(false);
+    const sim = $("[data-sim]", fundo);
+    if (sim) sim.onclick = () => fechar(true);
+    fundo.addEventListener("mousedown", (ev) => ev.target === fundo && fechar(false));
+    setTimeout(() => $("[data-nao]", fundo).focus(), 0);
+  });
+}
+
+async function excluirItem(colecao, item) {
+  if (!item || !(await confirmarExclusao(colecao, item))) return false;
+  return Boolean(await acao(() => api("DELETE", `/api/${colecao}/${item.id}?cascata=1`).then(() => true), "Excluído"));
 }
 
 function reabrirTarefa(id) {
@@ -836,6 +944,10 @@ document.addEventListener("click", async (ev) => {
     const [col, id] = d.editarEm.split(":");
     const item = col === "apontamentos" ? E.apontamentos.find((a) => a.id === id) : M[col].get(id);
     return abrirFormulario(col, item);
+  }
+  if (d.excluirEm) {
+    const [col, id] = d.excluirEm.split(":");
+    return excluirItem(col, col === "apontamentos" ? E.apontamentos.find((a) => a.id === id) : M[col].get(id));
   }
   if (d.novo) return abrirFormulario(d.novo);
   if (d.novaTarefa) return abrirFormulario("tarefas", null, { projetoId: d.novaTarefa });
@@ -868,7 +980,8 @@ $("#rapida").addEventListener("submit", async (ev) => {
   if (criada) {
     $("#rapida-titulo").value = "";
     $("#rapida-prazo").value = "";
-    $("#rapida-titulo").focus();
+    mostrarTarefaNova(criada.id);
+    $("#rapida-titulo").focus({ preventScroll: true });
   }
 });
 

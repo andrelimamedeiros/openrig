@@ -18,15 +18,7 @@ const COLECOES = {
   apontamentos: ["tarefaId", "pessoaId", "inicio", "fim", "nota"],
 };
 
-// Referências que impedem a exclusão: coleção -> [coleção que referencia, campo].
-const REFERENCIAS = {
-  clientes: [["projetos", "clienteId", "projetos"]],
-  projetos: [["tarefas", "projetoId", "tarefas"]],
-  pessoas: [
-    ["tarefas", "responsavelId", "tarefas"],
-    ["apontamentos", "pessoaId", "apontamentos de horas"],
-  ],
-};
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
 const STATUS_TAREFA = ["a_fazer", "em_andamento", "concluida"];
 const MIME = {
@@ -146,14 +138,41 @@ export function criarServidor({ dataDir }) {
     return item;
   }
 
-  function excluir(colecao, id) {
+  // O que some junto ao excluir: cliente -> projetos -> tarefas -> horas registradas.
+  function dependentes(colecao, id) {
+    const projetos = colecao === "clientes" ? estado.projetos.filter((p) => p.clienteId === id).map((p) => p.id) : colecao === "projetos" ? [id] : [];
+    const tarefas =
+      colecao === "tarefas" ? [id] : estado.tarefas.filter((t) => projetos.includes(t.projetoId)).map((t) => t.id);
+    const apontamentos = estado.apontamentos.filter((a) => tarefas.includes(a.tarefaId)).map((a) => a.id);
+    return { projetos: colecao === "clientes" ? projetos : [], tarefas: colecao === "tarefas" ? [] : tarefas, apontamentos };
+  }
+
+  // Sem "cascata", recusa excluir o que tem itens vinculados; com ela, exclui tudo junto.
+  function excluir(colecao, id, cascata) {
     buscar(colecao, id);
-    for (const [outra, campo, rotulo] of REFERENCIAS[colecao] ?? []) {
-      const n = estado[outra].filter((x) => x[campo] === id).length;
-      if (n > 0) throw new ErroHttp(409, `Não é possível excluir: existem ${n} ${rotulo} vinculados.`);
-    }
-    if (colecao === "tarefas") {
-      estado.apontamentos = estado.apontamentos.filter((a) => a.tarefaId !== id);
+    if (colecao === "pessoas") {
+      const horas = estado.apontamentos.filter((a) => a.pessoaId === id).length;
+      if (horas) {
+        throw new ErroHttp(409, `Não é possível excluir: a pessoa tem ${plural(horas, "registro de horas", "registros de horas")}. Edite o cadastro em vez de excluir, para manter o histórico.`);
+      }
+      const tarefas = estado.tarefas.filter((t) => t.responsavelId === id);
+      if (tarefas.length && !cascata) {
+        throw new ErroHttp(409, `Não é possível excluir: a pessoa é responsável por ${plural(tarefas.length, "tarefa", "tarefas")}.`);
+      }
+      for (const t of tarefas) t.responsavelId = null;
+    } else {
+      const dep = dependentes(colecao, id);
+      const vinculados = [
+        dep.projetos.length && plural(dep.projetos.length, "projeto", "projetos"),
+        dep.tarefas.length && plural(dep.tarefas.length, "tarefa", "tarefas"),
+      ].filter(Boolean);
+      if (vinculados.length && !cascata) {
+        throw new ErroHttp(409, `Não é possível excluir: existem itens vinculados (${vinculados.join(" e ")}).`);
+      }
+      const fora = (lista) => (x) => !lista.includes(x.id);
+      estado.projetos = estado.projetos.filter(fora(dep.projetos));
+      estado.tarefas = estado.tarefas.filter(fora(dep.tarefas));
+      estado.apontamentos = estado.apontamentos.filter(fora(dep.apontamentos));
     }
     estado[colecao] = estado[colecao].filter((x) => x.id !== id);
     salvar();
@@ -320,7 +339,7 @@ export function criarServidor({ dataDir }) {
     if (id && metodo === "GET") return json(res, 200, buscar(recurso, id));
     if (id && (metodo === "PUT" || metodo === "PATCH")) return json(res, 200, atualizar(recurso, id, await lerCorpo(req)));
     if (id && metodo === "DELETE") {
-      excluir(recurso, id);
+      excluir(recurso, id, url.searchParams.get("cascata") === "1");
       res.writeHead(204);
       return res.end();
     }

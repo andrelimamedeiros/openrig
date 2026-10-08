@@ -98,9 +98,51 @@ test("validações e proteção de exclusão", async () => {
   await req("POST", "/api/projetos", { nome: "P", clienteId: cliente.id });
   const r = await req("DELETE", `/api/clientes/${cliente.id}`);
   assert.equal(r.status, 409);
-  assert.match(r.corpo.erro, /projetos vinculados/);
+  assert.equal(r.corpo.erro, "Não é possível excluir: existem itens vinculados (1 projeto).");
 
   assert.equal((await req("DELETE", `/api/tarefas/${tarefa.id}`)).status, 204);
+});
+
+test("exclusão em cascata: cliente leva projetos, tarefas e horas", async () => {
+  const cliente = (await req("POST", "/api/clientes", { nome: "Gama" })).corpo;
+  const outroCliente = (await req("POST", "/api/clientes", { nome: "Delta" })).corpo;
+  const projeto = (await req("POST", "/api/projetos", { nome: "Casa", clienteId: cliente.id })).corpo;
+  const outroProjeto = (await req("POST", "/api/projetos", { nome: "Loja", clienteId: outroCliente.id })).corpo;
+  const pessoa = (await req("POST", "/api/pessoas", { nome: "Paula" })).corpo;
+  const t1 = (await req("POST", "/api/tarefas", { titulo: "A", projetoId: projeto.id, responsavelId: pessoa.id })).corpo;
+  await req("POST", "/api/tarefas", { titulo: "B", projetoId: projeto.id });
+  const fica = (await req("POST", "/api/tarefas", { titulo: "C", projetoId: outroProjeto.id, responsavelId: pessoa.id })).corpo;
+  await req("POST", "/api/apontamentos", { tarefaId: t1.id, pessoaId: pessoa.id, inicio: "2026-10-01T10:00:00Z", fim: "2026-10-01T11:00:00Z" });
+
+  const bloqueio = await req("DELETE", `/api/clientes/${cliente.id}`);
+  assert.equal(bloqueio.status, 409);
+  assert.equal(bloqueio.corpo.erro, "Não é possível excluir: existem itens vinculados (1 projeto e 2 tarefas).");
+
+  assert.equal((await req("DELETE", `/api/clientes/${cliente.id}?cascata=1`)).status, 204);
+  const estado = (await req("GET", "/api/estado")).corpo;
+  assert.ok(!estado.clientes.some((c) => c.id === cliente.id));
+  assert.ok(!estado.projetos.some((p) => p.id === projeto.id));
+  assert.ok(!estado.tarefas.some((t) => t.projetoId === projeto.id));
+  assert.ok(!estado.apontamentos.some((a) => a.tarefaId === t1.id));
+  assert.ok(estado.tarefas.some((t) => t.id === fica.id), "tarefas de outros clientes continuam");
+
+  // Pessoa sem horas: na cascata, as tarefas dela ficam sem responsável.
+  assert.equal((await req("DELETE", `/api/pessoas/${pessoa.id}`)).status, 409);
+  assert.equal((await req("DELETE", `/api/pessoas/${pessoa.id}?cascata=1`)).status, 204);
+  assert.equal((await req("GET", `/api/tarefas/${fica.id}`)).corpo.responsavelId, null);
+
+  // Projeto em cascata leva as próprias tarefas.
+  assert.equal((await req("DELETE", `/api/projetos/${outroProjeto.id}?cascata=1`)).status, 204);
+  assert.equal((await req("GET", `/api/tarefas/${fica.id}`)).status, 404);
+});
+
+test("pessoa com horas registradas não é excluída, nem em cascata", async () => {
+  const pessoa = (await req("POST", "/api/pessoas", { nome: "Vinicius" })).corpo;
+  const tarefa = (await req("POST", "/api/tarefas", { titulo: "Z", responsavelId: pessoa.id })).corpo;
+  await req("POST", `/api/tarefas/${tarefa.id}/iniciar`, {});
+  const r = await req("DELETE", `/api/pessoas/${pessoa.id}?cascata=1`);
+  assert.equal(r.status, 409);
+  assert.match(r.corpo.erro, /1 registro de horas/);
 });
 
 test("serve a interface e bloqueia acesso fora da pasta pública", async () => {

@@ -86,6 +86,15 @@ button:hover, .botao:hover { background: var(--painel-2); }
 
 .perigo { color: var(--perigo); }
 
+.botao-perigo {
+  background: var(--perigo);
+  border-color: var(--perigo);
+  color: var(--painel);
+  font-weight: 600;
+}
+
+.botao-perigo:hover { background: var(--perigo); filter: brightness(1.08); }
+
 .icone {
   border: none;
   background: transparent;
@@ -187,6 +196,12 @@ main { padding: 18px 20px 60px; max-width: 1500px; margin: 0 auto; }
 .cartao.rodando { border-color: var(--rodando); border-left-color: var(--rodando); }
 
 .cartao.arrastando { opacity: .4; }
+
+.cartao.destaque { outline: 3px solid var(--primario); outline-offset: 2px; animation: piscar 1.3s ease-out 2; }
+
+@keyframes piscar { from { box-shadow: 0 0 0 6px color-mix(in srgb, var(--primario) 35%, transparent); } to { box-shadow: 0 0 0 0 transparent; } }
+
+@media (prefers-reduced-motion: reduce) { .cartao.destaque { animation: none; } }
 
 .cartao .titulo { font-weight: 600; cursor: pointer; word-break: break-word; }
 
@@ -364,6 +379,12 @@ tr:last-child td { border-bottom: none; }
 .botoes-modal .perigo { margin-right: auto; }
 
 .botoes-modal .primario { margin-left: auto; }
+
+.modal-confirmar { width: min(440px, 100%); }
+
+.modal-confirmar p { margin: 0 0 10px; }
+
+.lista-exclusao { margin: 0 0 12px; padding-left: 20px; font-weight: 600; }
 
 .historico { margin-top: 18px; border-top: 1px solid var(--borda); padding-top: 12px; }
 
